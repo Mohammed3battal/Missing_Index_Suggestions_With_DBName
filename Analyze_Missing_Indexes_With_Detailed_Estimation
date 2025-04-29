@@ -1,0 +1,45 @@
+SELECT 
+    CONVERT(varchar(30), GETDATE(), 126) AS runtime,
+    DB_NAME(mid.database_id) AS [DatabaseName],
+
+    -- Separated estimation elements
+    CONVERT(decimal(10, 2), migs.avg_total_user_cost) AS avg_total_user_cost,
+    CONVERT(decimal(10, 2), migs.avg_user_impact) AS avg_user_impact,
+    migs.user_seeks + migs.user_scans AS total_usage_count,
+
+    -- Final estimation
+    CONVERT(decimal(28, 2), 
+        migs.avg_total_user_cost * migs.avg_user_impact * 
+        (migs.user_seeks + migs.user_scans)
+    ) AS estimated_improvement,
+
+    -- Missing index CREATE statement
+    'CREATE INDEX missing_index_' + 
+        CONVERT(varchar, mig.index_group_handle) + '_' + 
+        CONVERT(varchar, mid.index_handle) + ' ON ' + 
+        mid.statement + 
+        ' (' + ISNULL(mid.equality_columns, '') +
+        CASE 
+            WHEN mid.equality_columns IS NOT NULL AND mid.inequality_columns IS NOT NULL THEN ',' 
+            ELSE '' 
+        END +
+        ISNULL(mid.inequality_columns, '') + ')' +
+        ISNULL(' INCLUDE (' + mid.included_columns + ')', '') 
+        AS create_index_statement
+
+FROM 
+    sys.dm_db_missing_index_groups AS mig
+JOIN 
+    sys.dm_db_missing_index_group_stats AS migs ON migs.group_handle = mig.index_group_handle
+JOIN 
+    sys.dm_db_missing_index_details AS mid ON mig.index_handle = mid.index_handle
+
+
+-- Filter: Only indexes with usage count greater than 100
+
+
+--WHERE (migs.user_seeks + migs.user_scans) > 5000
+
+
+ORDER BY 
+    avg_user_impact DESC;
